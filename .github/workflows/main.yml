@@ -20,14 +20,15 @@ jobs:
 
     - name: Build
       run: |
+          cd ./
           go get github.com/mitchellh/gox
-          gox -os "windows linux" -arch "amd64 arm arm64"
+          CGO_ENABLED=1 gox -os "windows linux" -arch "amd64 arm arm64"
           ls
     - name: Upload binaries to release
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: xdd/xdd_*
+        file: xdd_*
         tag: xdd
         overwrite: true
         file_glob: true
