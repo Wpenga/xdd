@@ -24,6 +24,7 @@ var ListenQQPrivateMessage = func(uid int64, msg string) {
 var ListenQQGroupMessage = func(gid int64, uid int64, msg string) {
 	if gid == Config.QQGroupID {
 		if Config.QbotPublicMode {
+
 			SendQQGroup(gid, uid, handleMessage(msg, "qqg", int(gid), int(uid)))
 		} else {
 			SendQQ(uid, handleMessage(msg, "qq", int(uid)))
@@ -162,26 +163,41 @@ var handleMessage = func(msgs ...interface{}) interface{} {
 		return nil
 	case "查询", "query":
 		cks := GetJdCookies()
-		find := false
+		pins := ""
 		for _, ck := range cks {
 			if tp == "qq" {
 				if ck.QQ == id {
-					find = true
-					SendQQ(int64(id), ck.Query())
+					pins += ck.PtPin
 				}
 			} else if tp == "qqg" {
 				if ck.QQ == msgs[3].(int) {
-					find = true
-					SendQQGroup(int64(id), int64(msgs[3].(int)), ck.Query())
+					pins += ck.PtPin
 				}
 			}
-
 		}
-		if !find {
+		if pins == "" {
 			return "你尚未绑定🐶东账号，请对我说扫码，扫码后即可查询账户资产信息。"
+		}
+		for _, task := range Config.Tasks {
+			if task.Word == msg {
+				task.Envs = []Env{{
+					Name:  "pins",
+					Value: pins,
+				}}
+				runTask(&task, msgs...)
+			}
 		}
 		return nil
 	default:
+		{ //tyt
+			ss := regexp.MustCompile(`packetId=(\S+!!)`).FindStringSubmatch(msg)
+			if len(ss) > 0 {
+				runTask(&Task{Path: "jd_tyt.js", Envs: []Env{
+					{Name: "tytpacketId", Value: ss[1]},
+				}}, msgs...)
+				return nil
+			}
+		}
 		{ //
 			ss := regexp.MustCompile(`pt_key=([^;=\s]+);pt_pin=([^;=\s]+)`).FindAllStringSubmatch(msg, -1)
 			if len(ss) > 0 {
@@ -234,76 +250,24 @@ var handleMessage = func(msgs ...interface{}) interface{} {
 					cks := GetJdCookies()
 					a := s[2]
 					{
-						if s := strings.Split(a, "-"); len(s) == 2 {
-							for i, ck := range cks {
-								if i+1 >= Int(s[0]) && i+1 <= Int(s[1]) {
-									switch tp {
-									case "tg":
-										tgBotNotify(ck.Query())
-									case "qq":
-										if id == ck.QQ {
-											SendQQ(int64(id), ck.Query())
-										} else {
-											SendQQ(Config.QQID, ck.Query())
-										}
-									case "qqg":
-										uid := msgs[3].(int)
-										if uid == ck.QQ || uid == int(Config.QQID) {
-											SendQQGroup(int64(id), int64(msgs[3].(int)), ck.Query())
-										}
-									}
-								}
-							}
-							return nil
-						}
-					}
-					{
-						if x := regexp.MustCompile(`^[\s\d,]+$`).FindString(a); x != "" {
-							xx := regexp.MustCompile(`(\d+)`).FindAllStringSubmatch(a, -1)
-							for i, ck := range cks {
-								for _, x := range xx {
-									if fmt.Sprint(i+1) == x[1] {
-										switch tp {
-										case "tg":
-											tgBotNotify(ck.Query())
-										case "qq":
-											if id == ck.QQ {
-												SendQQ(int64(id), ck.Query())
-											} else {
-												SendQQ(Config.QQID, ck.Query())
-											}
-										case "qqg":
-											uid := msgs[3].(int)
-											if uid == ck.QQ || uid == int(Config.QQID) {
-												SendQQGroup(int64(id), int64(msgs[3].(int)), ck.Query())
-											}
-										}
-									}
-								}
-
-							}
-							return nil
-						}
-					}
-					{
 						a = strings.Replace(a, " ", "", -1)
+						pins := ""
 						for _, ck := range cks {
 							if strings.Contains(ck.Note, a) || strings.Contains(ck.Nickname, a) || strings.Contains(ck.PtPin, a) {
-								switch tp {
-								case "tg":
-									tgBotNotify(ck.Query())
-								case "qq":
-									if id == ck.QQ {
-										SendQQ(int64(id), ck.Query())
-									} else {
-										SendQQ(Config.QQID, ck.Query())
-									}
-								case "qqg":
-									uid := msgs[3].(int)
-									if uid == ck.QQ || uid == int(Config.QQID) {
-										SendQQGroup(int64(id), int64(msgs[3].(int)), ck.Query())
-									}
-								}
+								pins += ck.PtPin
+							}
+						}
+						if pins == "" {
+							return "找不到匹配的账号"
+						}
+						for _, task := range Config.Tasks {
+							if task.Word == "查询" {
+								task.Envs = []Env{{
+									Name:  "pins",
+									Value: pins,
+								}}
+								runTask(&task, msgs...)
+								break
 							}
 						}
 						return nil
@@ -342,6 +306,8 @@ var handleMessage = func(msgs ...interface{}) interface{} {
 						}
 					}
 					return fmt.Sprintf("操作成功，%d剩余许愿币%d", id, b)
+				case "run", "执行":
+					runTask(&Task{Path: v}, msgs...)
 				}
 
 			}
